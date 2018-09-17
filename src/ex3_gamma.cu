@@ -208,9 +208,11 @@ int main(int argc,char **argv)
         cv::imwrite("image_result.png",mOut*255.f);
     }
 
-    // ### Free allocated arrays
-    // TODO free cuda memory of all device arrays
-    // TODO free memory of all host arrays
+    // free allocated arrays
+    delete[] imgIn;
+    delete[] imgOut;
+    cudaFree(d_imgIn); CUDA_CHECK;
+    cudaFree(d_imgOut); CUDA_CHECK;
 
     // close all opencv windows
     cv::destroyAllWindows();
