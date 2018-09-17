@@ -22,6 +22,23 @@ void cuda_check(string file, int line)
 }
 
 
+// perform the actual computation on GPU
+__device__
+void addArrays(float* d_a, float* d_b, float* d_c, int n)
+{
+    int i = threadIdx.x + blockDim.x * blockIdx.x;
+    if (i < n) d_c[i] = d_a[i] + d_b[i];
+}
+
+
+// kernel to call from the main function
+__global__
+void addArraysKernel(float* d_a, float* d_b, float* d_c, int n)
+{
+    addArrays(d_a, d_b, d_c, n);
+}
+
+
 int main(int argc, char **argv)
 {
     // alloc and init input arrays on host (CPU)
@@ -46,19 +63,32 @@ int main(int argc, char **argv)
     // init c
     for(int i=0; i<n; i++) c[i] = 0;
     
-
-
-    // GPU computation
-    // ###
-    // ### TODO (2.2) Implement the array addition on the GPU, store the result in "c"
-    // ###
-    // ### Notes:
-    // ### 1. Remember to free all GPU arrays after the computation
-    // ### 2. Always use the macro CUDA_CHECK after each CUDA call, e.g. "cudaMalloc(...); CUDA_CHECK;"
-    // ###    For convenience this macro is defined directly in this file, later we will only include "helper.h"
     
-
-
+    // GPU computation
+    // allocate memory on GPU
+    size_t nbytes = (size_t)(n)*sizeof(float);
+    float* d_a = NULL;
+    float* d_b = NULL;
+    float* d_c = NULL;
+    cudaMalloc(&d_a, nbytes); CUDA_CHECK;
+    cudaMalloc(&d_b, nbytes); CUDA_CHECK;
+    cudaMalloc(&d_c, nbytes); CUDA_CHECK;
+    
+    // CPU => GPU
+    cudaMemcpy(d_a, a, (size_t)(n)*sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
+    cudaMemcpy(d_b, b, (size_t)(n)*sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
+    cudaMemcpy(d_c, c, (size_t)(n)*sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
+    
+    // launch kernel
+    dim3 block = dim3(128,1,1);
+    dim3 grid = dim3((n + block.x - 1) / block.x, 1, 1);
+    addArraysKernel <<<grid,block>>> (d_a, d_b, d_c, n);
+    
+    // GPU => CPU
+    cudaMemcpy(a, d_a, (size_t)(n)*sizeof(float), cudaMemcpyDeviceToHost); CUDA_CHECK;
+    cudaMemcpy(b, d_b, (size_t)(n)*sizeof(float), cudaMemcpyDeviceToHost); CUDA_CHECK;
+    cudaMemcpy(c, d_c, (size_t)(n)*sizeof(float), cudaMemcpyDeviceToHost); CUDA_CHECK;
+    
     // print result
     cout << "GPU:"<<endl;
     for(int i=0; i<n; i++) cout << i << ": " << a[i] << " + " << b[i] << " = " << c[i] << endl;
@@ -68,6 +98,11 @@ int main(int argc, char **argv)
     delete[] a;
     delete[] b;
     delete[] c;
+    
+    // free GPU arrays
+    cudaFree(d_a); CUDA_CHECK;
+    cudaFree(d_b); CUDA_CHECK;
+    cudaFree(d_c); CUDA_CHECK;
 }
 
 
