@@ -76,8 +76,9 @@ int main(int argc,char **argv)
     // Before the GPU can process your kernels, a so called "CUDA context" must be initialized
     // This happens on the very first call to a CUDA function, and takes some time (around half a second)
     // We will do it right here, so that the run time measurements are accurate
-    cudaDeviceSynchronize();  CUDA_CHECK;
-
+    if (!cpu) {
+        cudaDeviceSynchronize();  CUDA_CHECK;
+    }
     // ### Set the output image format
     // Let mOut have the same number of channels as the input image (e.g. for the "invert image" or the "convolution" exercise)
     // To let mOut be a color image with 3 channels: CV_32FC3 instead of mIn.type() (e.g. for "visualization of the laplacian" exercise)
@@ -96,15 +97,22 @@ int main(int argc,char **argv)
     // input image number of channels: nc
     // output image number of channels: mOut.channels(), as defined above depending on the exercise (1 for grayscale, 3 for color, nc for general)
     //
-    // allocate raw input image array
-    float *imgIn = NULL;    // TODO allocate array
-    // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOut = NULL;   // TODO allocate array
 
-    // allocate arrays on GPU
+    // allocate arrays on CPU
+    // allocate raw input image array
+    float *imgIn = new float[h * w * nc];
+    // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
+    float *imgOut = new float[h * w * nc];
+
     float *d_imgIn = NULL;
     float *d_imgOut = NULL;
-    // TODO alloc cuda memory for d_imgIn and d_imgOut
+    size_t nbytes = (size_t)(h * w * nc)*sizeof(float);
+
+    if (!cpu) {
+        // allocate arrays on GPU
+        cudaMalloc(&d_imgIn, nbytes); CUDA_CHECK;
+        cudaMalloc(&d_imgOut, nbytes); CUDA_CHECK;
+    }
 
     do
     {
@@ -139,7 +147,6 @@ int main(int argc,char **argv)
             timer.start();
             for (size_t i = 0; i < repeats; ++i)
             {
-                // TODO (3.1) implement computeGamma() in gamma.cu
                 computeGamma(imgOut, imgIn, gamma, w, h, nc);
             }
             float t = timer.get()/repeats;
@@ -147,23 +154,22 @@ int main(int argc,char **argv)
         }
         else
         {
-            // 1. Copy to device
-            // TODO copy from imgIn to d_imgIn
+            // CPU => GPU
+            cudaMemcpy(d_imgIn, imgIn, nbytes, cudaMemcpyHostToDevice); CUDA_CHECK;
 
             // 2. Execute kernel
             Timer timer;
             timer.start();
             for(size_t i = 0; i < repeats; ++i)
             {
-                // TODO (3.2) implement computeGammaCuda() in gamma.cu
                 computeGammaCuda(d_imgOut, d_imgIn, gamma, w, h, nc);
-                cudaDeviceSynchronize();
+                cudaDeviceSynchronize(); CUDA_CHECK;
             }
             float t = timer.get()/repeats;
             std::cout << "average time: " << t*1000 << " ms" << std::endl;
 
-            // 3. Copy back to CPU
-            // TODO copy from d_imgOut to imgOut
+            // GPU => CPU
+            cudaMemcpy(imgOut, d_imgOut, nbytes, cudaMemcpyDeviceToHost); CUDA_CHECK;
         }
 
         // show input image
