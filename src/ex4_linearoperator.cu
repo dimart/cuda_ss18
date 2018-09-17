@@ -78,20 +78,26 @@ int main(int argc,char **argv)
 
     // ### Allocate arrays
     // allocate raw input image array
-    float *imgIn = NULL;    // TODO allocate array
+    float *imgIn = new float[w * h * nc];
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOut_lapNorm = NULL;   // TODO allocate array
-    float *imgOut_u = NULL;         // TODO allocate array
-    float *imgOut_v = NULL;         // TODO allocate array
-    float *imgOut_w = NULL;         // TODO allocate array
+    float *imgOut_lapNorm = new float[w * h * 1];
+    float *imgOut_u = new float[w * h * nc];
+    float *imgOut_v = new float[w * h * nc];
+    float *imgOut_w = new float[w * h * nc];
 
     // allocate arrays on GPU
+    size_t nbytes = (size_t)(h * w * nc)*sizeof(float);
     float *d_imgIn = NULL;
     float *d_lapNorm = NULL;
     float *d_u = NULL;
     float *d_v = NULL;
     float *d_w = NULL;
-    // TODO alloc cuda memory for device arrays
+
+    cudaMalloc(&d_imgIn, nbytes); CUDA_CHECK;
+    cudaMalloc(&d_lapNorm, (h * w * 1)*sizeof(float)); CUDA_CHECK;
+    cudaMalloc(&d_u, nbytes); CUDA_CHECK;
+    cudaMalloc(&d_v, nbytes); CUDA_CHECK;
+    cudaMalloc(&d_w, nbytes); CUDA_CHECK;
 
     do
     {
@@ -100,8 +106,9 @@ int main(int argc,char **argv)
 
         // init raw input image array (and convert to layered)
         convertMatToLayered (imgIn, mIn);
-        // upload to GPU
-        // TODO copy from imgIn to d_imgIn
+
+        // CPU => GPU
+        cudaMemcpy(d_imgIn, imgIn, nbytes, cudaMemcpyHostToDevice); CUDA_CHECK;
 
         Timer timer;
         timer.start();
@@ -115,22 +122,30 @@ int main(int argc,char **argv)
             computeDivergenceCuda(d_w, d_u, d_v, w, h, nc);
             cudaDeviceSynchronize();
 
-            // TODO (4.3) implement computeNormCuda() in norm.cu
-            computeNormCuda(d_lapNorm, d_w, w, h, nc);
-            cudaDeviceSynchronize();
+//            // TODO (4.3) implement computeNormCuda() in norm.cu
+//            computeNormCuda(d_lapNorm, d_w, w, h, nc);
+//            cudaDeviceSynchronize();
         }
         timer.end();
         float t = timer.get()/repeats;
         std::cout << "average time: " << t*1000 << " ms" << std::endl;
 
-        // copy back to CPU
-        // TODO download from device arrays to host arrays
+        // GPU => CPU
+        cudaMemcpy(imgOut_u, d_u, nbytes, cudaMemcpyDeviceToHost); CUDA_CHECK;
+        cudaMemcpy(imgOut_v, d_v, nbytes, cudaMemcpyDeviceToHost); CUDA_CHECK;
+        cudaMemcpy(imgOut_w, d_w, nbytes, cudaMemcpyDeviceToHost); CUDA_CHECK;
 
         // show input image
         showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
 
         // show output image: first convert to interleaved opencv format from the layered raw array
         // TODO (4.4) show gradient, divergence and laplacian
+        convertLayeredToMat(mOut_u, imgOut_u);
+        showImage("Output d_u", mOut_u, 100, 100+w);
+        convertLayeredToMat(mOut_v, imgOut_v);
+        showImage("Output d_v", mOut_v, 100+w, 100+w);
+        convertLayeredToMat(mOut_w, imgOut_w);
+        showImage("Output divergence", mOut_w, 100+w, 100);
 
         if (useCam)
         {
@@ -159,9 +174,17 @@ int main(int argc,char **argv)
         cv::imwrite("image_result.png",mOut_lapNorm*255.f);
     }
 
-    // ### Free allocated arrays
-    // TODO free cuda memory of all device arrays
-    // TODO free memory of all host arrays
+    // free allocated arrays
+    delete[] imgIn;
+    delete[] imgOut_u;
+    delete[] imgOut_v;
+    delete[] imgOut_w;
+    delete[] imgOut_lapNorm;
+    cudaFree(d_imgIn); CUDA_CHECK;
+    cudaFree(d_u); CUDA_CHECK;
+    cudaFree(d_v); CUDA_CHECK;
+    cudaFree(d_w); CUDA_CHECK;
+    cudaFree(d_lapNorm); CUDA_CHECK;
 
     // close all opencv windows
     cv::destroyAllWindows();
