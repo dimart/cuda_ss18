@@ -37,7 +37,27 @@ void computeConvolutionGlobalMemKernel(float *imgOut, const float *imgIn, const 
 
 void createConvolutionKernel(float *kernel, int kradius, float sigma)
 {
-    // TODO (5.1) fill convolution kernel
+    float sum = 0;
+    for (int a = -kradius; a <= kradius; a++) {
+        for (int b = -kradius; b <= kradius; b++) {
+            int at = kradius + b + (2 * kradius + 1) * (kradius + a);
+            float num = exp(-(a * a + b * b) / (2 * sigma * sigma));
+            float denum = 2 * M_PI * sigma * sigma;
+            kernel[at] = num / denum;
+            sum += kernel[at];
+//            std::cout << kernel[at] << " ";
+        }
+//        std::cout << std::endl;
+    }
+//    std::cout << "normalized:" << std::endl;
+    for (int a = -kradius; a <= kradius; a++) {
+        for (int b = -kradius; b <= kradius; b++) {
+            int at = kradius + b + (2 * kradius + 1)* (kradius + a);
+            kernel[at] /= sum;
+//            std::cout << kernel[at] << " ";
+        }
+//        std::cout << std::endl;
+    }
 }
 
 
@@ -49,7 +69,9 @@ void computeConvolution(float *imgOut, const float *imgIn, const float *kernel, 
         return;
     }
 
-    // TODO (5.3) compute convolution on CPU
+    for (int ch = 0; ch < nc; ch++) {
+        int skip = w * h * ch;
+    }
 }
 
 

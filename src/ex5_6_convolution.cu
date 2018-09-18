@@ -76,17 +76,17 @@ int main(int argc,char **argv)
     mIn.convertTo(mIn, CV_32F);
 
     // init kernel
-    int kradius = 0;    // TODO (5.1) calculate kernel radius using sigma
+    int kradius = ceil(3 * sigma);
     std::cout << "kradius: " << kradius << std::endl;
-    int k_diameter = 0;     // TODO (5.1) calculate kernel diameter from radius
+    int k_diameter = 2 * kradius + 1;
     int kn = k_diameter*k_diameter;
-    float *kernel = NULL;    // TODO (5.1) allocate array
-    // TODO (5.1) implement createConvolutionKernel() in convolution.cu
+    float *kernel = new float[kn];
     createConvolutionKernel(kernel, kradius, sigma);
 
-    cv::Mat mKernel(k_diameter,k_diameter,CV_32FC1);
+    // fill mKernel for visualization
+    cv::Mat mKernel(k_diameter, k_diameter,CV_32FC1);
     {
-        // TODO (5.2) fill mKernel for visualization
+        memcpy(mKernel.data, kernel, kn*sizeof(float));
     }
 
     // get image dimensions
@@ -103,9 +103,9 @@ int main(int argc,char **argv)
 
     // ### Allocate arrays
     // allocate raw input image array
-    float *imgIn = NULL;    // TODO allocate array
+    float *imgIn = new float[w * h * nc];    // TODO allocate array
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOut = NULL;   // TODO allocate array
+    float *imgOut = new float[w * h * nc];   // TODO allocate array
 
     // allocate arrays on GPU
     float *d_imgIn = NULL;
@@ -182,7 +182,7 @@ int main(int argc,char **argv)
 
         // proceed similarly for other output images, e.g. the convolution kernel:
         if (!mKernel.empty())
-            showImage("Kernel", mKernel, 100, 50);
+            showImage("Kernel", mKernel, 100, 100);
 
         if (useCam)
         {
