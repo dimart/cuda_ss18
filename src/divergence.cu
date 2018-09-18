@@ -20,6 +20,7 @@ void computeDivergenceKernel(float *q, const float *v1, const float *v2, int w, 
     int dx = (x - 1) + y * w + w * h * z;
     int dy = x + (y - 1) * w + w * h * z;
     if (x < w && y < h && z < nc)
+        q[i] = 0;
         if (x > 0)
             q[i] += (v1[i] - v1[dx]);
         if (y > 0)

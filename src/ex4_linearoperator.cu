@@ -87,6 +87,7 @@ int main(int argc,char **argv)
 
     // allocate arrays on GPU
     size_t nbytes = (size_t)(h * w * nc)*sizeof(float);
+    size_t nbytes_lapNorm = (size_t)(h * w * 1)*sizeof(float);
     float *d_imgIn = NULL;
     float *d_lapNorm = NULL;
     float *d_u = NULL;
@@ -94,7 +95,7 @@ int main(int argc,char **argv)
     float *d_w = NULL;
 
     cudaMalloc(&d_imgIn, nbytes); CUDA_CHECK;
-    cudaMalloc(&d_lapNorm, (h * w * 1)*sizeof(float)); CUDA_CHECK;
+    cudaMalloc(&d_lapNorm, nbytes_lapNorm); CUDA_CHECK;
     cudaMalloc(&d_u, nbytes); CUDA_CHECK;
     cudaMalloc(&d_v, nbytes); CUDA_CHECK;
     cudaMalloc(&d_w, nbytes); CUDA_CHECK;
@@ -114,17 +115,14 @@ int main(int argc,char **argv)
         timer.start();
         for(size_t i = 0; i < repeats; ++i)
         {
-            // TODO (4.1) implement computeGradientCuda() in gradient.cu
             computeGradientCuda(d_u, d_v, d_imgIn, w, h, nc);
             cudaDeviceSynchronize();
 
-            // TODO (4.2) implement computeDivergenceCuda() in divergence.cu
             computeDivergenceCuda(d_w, d_u, d_v, w, h, nc);
             cudaDeviceSynchronize();
 
-//            // TODO (4.3) implement computeNormCuda() in norm.cu
-//            computeNormCuda(d_lapNorm, d_w, w, h, nc);
-//            cudaDeviceSynchronize();
+            computeNormCuda(d_lapNorm, d_w, w, h, nc);
+            cudaDeviceSynchronize();
         }
         timer.end();
         float t = timer.get()/repeats;
@@ -134,6 +132,7 @@ int main(int argc,char **argv)
         cudaMemcpy(imgOut_u, d_u, nbytes, cudaMemcpyDeviceToHost); CUDA_CHECK;
         cudaMemcpy(imgOut_v, d_v, nbytes, cudaMemcpyDeviceToHost); CUDA_CHECK;
         cudaMemcpy(imgOut_w, d_w, nbytes, cudaMemcpyDeviceToHost); CUDA_CHECK;
+        cudaMemcpy(imgOut_lapNorm, d_lapNorm, nbytes_lapNorm, cudaMemcpyDeviceToHost); CUDA_CHECK;
 
         // show input image
         showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
@@ -146,6 +145,8 @@ int main(int argc,char **argv)
         showImage("Output d_v", mOut_v, 100+w, 100+w);
         convertLayeredToMat(mOut_w, imgOut_w);
         showImage("Output divergence", mOut_w, 100+w, 100);
+        convertLayeredToMat(mOut_lapNorm, imgOut_lapNorm);
+        showImage("Output Laplacian norm", mOut_lapNorm, 100, 100);
 
         if (useCam)
         {
