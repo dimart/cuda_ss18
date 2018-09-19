@@ -70,7 +70,29 @@ void computeConvolution(float *imgOut, const float *imgIn, const float *kernel, 
     }
 
     for (int ch = 0; ch < nc; ch++) {
-        int skip = w * h * ch;
+        int ch_skip = w * h * ch;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                float convolved_val = 0;
+                int convolved_origin = x + y * w + ch_skip;
+
+                for (int a = -kradius; a < kradius; a++) {
+                    for (int b = -kradius; b < kradius; b++) {
+                        int at_ker = a + kradius + (b + kradius) * (2 * kradius + 1);
+                        int at_x = x - a;
+                        int at_y = y - b;
+                        if (at_x < 0) at_x = 0;
+                        if (at_y < 0) at_y = 0;
+                        if (at_x >= w) at_x = w - 1;
+                        if (at_y >= h) at_y = h - 1;
+
+                        convolved_val += imgIn[at_x + at_y * w + ch_skip] * kernel[at_ker];
+                    }
+                }
+
+                imgOut[convolved_origin] = convolved_val;
+            }
+        }
     }
 }
 

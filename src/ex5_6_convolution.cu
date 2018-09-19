@@ -86,13 +86,20 @@ int main(int argc,char **argv)
     // fill mKernel for visualization
     cv::Mat mKernel(k_diameter, k_diameter,CV_32FC1);
     {
-        memcpy(mKernel.data, kernel, kn*sizeof(float));
+        float *cv_kernel = new float[kn];
+        memcpy(cv_kernel, kernel, kn*sizeof(float));
+        float max = *(std::max_element(cv_kernel, cv_kernel + kn));
+        for (int i = 0; i < kn; ++i)
+            cv_kernel[i] /= max;
+        memcpy(mKernel.data, cv_kernel, kn*sizeof(float));
+        delete[] cv_kernel;
     }
 
     // get image dimensions
     int w = mIn.cols;         // width
     int h = mIn.rows;         // height
     int nc = mIn.channels();  // number of channels
+    size_t nbytes = (size_t)(h * w * nc)*sizeof(float);
     std::cout << "Image: " << w << " x " << h << std::endl;
 
     // initialize CUDA context
@@ -103,15 +110,18 @@ int main(int argc,char **argv)
 
     // ### Allocate arrays
     // allocate raw input image array
-    float *imgIn = new float[w * h * nc];    // TODO allocate array
+    float *imgIn = new float[w * h * nc];
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOut = new float[w * h * nc];   // TODO allocate array
+    float *imgOut = new float[w * h * nc];
 
     // allocate arrays on GPU
     float *d_imgIn = NULL;
     float *d_imgOut = NULL;
     float *d_kernel = NULL;
-    // TODO alloc cuda memory for device arrays
+    // alloc cuda memory for device arrays
+    cudaMalloc(&d_imgIn, (size_t) w * h * nc);
+    cudaMalloc(&d_imgOut, (size_t) w * h * nc);
+    cudaMalloc(&d_kernel, kn);
 
     do
     {
@@ -124,7 +134,6 @@ int main(int argc,char **argv)
         {
             Timer timer;
             timer.start();
-            // TODO (5.3) implement computeConvolution() in convolution.cu
             computeConvolution(imgOut, imgIn, kernel, kradius, w, h, nc);
             timer.end();
             float t = timer.get();
@@ -133,8 +142,9 @@ int main(int argc,char **argv)
         else
         {
             // upload to GPU
-
-            // TODO copy all necessary arrays from host to device
+            // CPU => GPU
+            cudaMemcpy(d_imgIn, imgIn, nbytes, cudaMemcpyHostToDevice); CUDA_CHECK;
+            cudaMemcpy(d_kernel, kernel, kn * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
 
             // if using constant memory
             // TODO (6.3) copy kernel from host to constant memory
@@ -170,7 +180,8 @@ int main(int argc,char **argv)
             float t = timer.get()/repeats;
             std::cout << "time: " << t*1000 << " ms" << std::endl;
 
-            // TODO copy all necessary arrays from device to host
+            // GPU => CPU
+            cudaMemcpy(imgOut, d_imgOut, nbytes, cudaMemcpyDeviceToHost); CUDA_CHECK;
         }
 
         // show input image
@@ -212,9 +223,13 @@ int main(int argc,char **argv)
         cv::imwrite("image_kernel.png",mKernel*255.f);
     }
 
-    // ### Free allocated arrays
-    // TODO free cuda memory of all device arrays
-    // TODO free memory of all host arrays
+    // free allocated arrays
+    delete[] imgIn;
+    delete[] imgOut;
+    delete[] kernel;
+    cudaFree(d_imgIn); CUDA_CHECK;
+    cudaFree(d_imgOut); CUDA_CHECK;
+    cudaFree(d_kernel); CUDA_CHECK;
 
     // close all opencv windows
     cv::destroyAllWindows();
