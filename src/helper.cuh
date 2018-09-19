@@ -35,7 +35,11 @@ inline dim3 computeGrid2D(const dim3 &block, const int w, const int h)
 
 inline dim3 computeGrid3D(const dim3 &block, const int w, const int h, const int s)
 {
-    return dim3(0, 0, 0);   // TODO (3.2) compute 3D grid size from block size
+    return dim3(
+        (w + block.x - 1) / block.x,
+        (h + block.y - 1) / block.y,
+        (s + block.z - 1) / block.z
+    );
 }
 
 

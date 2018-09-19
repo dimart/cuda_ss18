@@ -119,9 +119,9 @@ int main(int argc,char **argv)
     float *d_imgOut = NULL;
     float *d_kernel = NULL;
     // alloc cuda memory for device arrays
-    cudaMalloc(&d_imgIn, (size_t) w * h * nc);
-    cudaMalloc(&d_imgOut, (size_t) w * h * nc);
-    cudaMalloc(&d_kernel, kn);
+    cudaMalloc(&d_imgIn, nbytes);
+    cudaMalloc(&d_imgOut, nbytes);
+    cudaMalloc(&d_kernel, kn * sizeof(float));
 
     do
     {
@@ -158,7 +158,6 @@ int main(int argc,char **argv)
                 if (memory == 1)
                 {
                     // shared memory
-                    // TODO (6.1) implement computeConvolutionSharedMemCuda() in convolution.cu
                     computeConvolutionSharedMemCuda(d_imgOut, d_imgIn, d_kernel, kradius, w, h, nc);
                 }
                 else if (memory == 2)
@@ -170,7 +169,6 @@ int main(int argc,char **argv)
                 else
                 {
                     // global memory
-                    // TODO (5.4) implement computeConvolutionGlobalMemCuda() in convolution.cu
                     computeConvolutionGlobalMemCuda(d_imgOut, d_imgIn, d_kernel, kradius, w, h, nc);
                 }
                 cudaDeviceSynchronize();
