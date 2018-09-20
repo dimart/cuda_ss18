@@ -10,7 +10,10 @@
 #include <stdio.h>
 
 
-// TODO (6.3) define constant memory for convolution kernel
+// define constant memory for convolution kernel
+const uint MAX_KERNEL_RADIUS = 20;
+const uint MAX_KERNEL_DIAMETER = 2 * MAX_KERNEL_RADIUS + 1;
+__constant__ float constKernel[MAX_KERNEL_DIAMETER * MAX_KERNEL_DIAMETER];
 
 // TODO (6.2) define texture for image
 
@@ -28,7 +31,8 @@ void computeConvolutionSharedMemKernel(float *imgOut, const float *imgIn, const 
     extern __shared__ float s_imgIn[];
 
     /**
-     * Fill in s_imgIn
+     * Fill in s_imgIn.
+     * Use all block's threads.
      * */
     int rad2 = kradius * 2;
     int patchDimX = blockDim.x + rad2;
@@ -74,7 +78,8 @@ void computeConvolutionSharedMemKernel(float *imgOut, const float *imgIn, const 
     }
 
     /**
-     * Compute convolution using shared memory s_imgIn
+     * Compute convolution using shared memory s_imgIn.
+     * Use only `on-image` threads.
      * */
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -91,7 +96,7 @@ void computeConvolutionSharedMemKernel(float *imgOut, const float *imgIn, const 
                 // add kradius and multiply on patchDimX to account for the 'boarder' in s_imgIn
                 int posX = threadIdx.x + kradius + a;
                 int posY = (threadIdx.y + kradius + b) * patchDimX;
-                convolved_val += s_imgIn[posX + posY + s_ch_skip] * kernel[at_ker];
+                convolved_val += s_imgIn[posX + posY + s_ch_skip] * constKernel[at_ker];
             }
         }
         imgOut[x + y * w + ch_skip] = convolved_val;
@@ -214,6 +219,9 @@ void computeConvolutionSharedMemCuda(float *imgOut, const float *imgIn, const fl
     // calculate shared memory size
     int rad2 = kradius * 2;
     size_t smBytes = (block.x + rad2) * (block.y + rad2) * nc * sizeof(float);
+
+    // fill-in constant memory
+    cudaMemcpyToSymbol(constKernel, kernel, (rad2 + 1) * (rad2 + 1) * sizeof(float));
 
     // run cuda kernel
     computeConvolutionSharedMemKernel<<<grid,block,smBytes>>>(imgOut, imgIn, kernel, kradius, w, h, nc);
