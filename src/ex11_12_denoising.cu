@@ -57,8 +57,7 @@ int main(int argc,char **argv)
     {
         // ### PARALLEL_REDUCE_TEST
         // specify command line parameter -p to run parallel reduction
-        // TODO (12.1) complete runParallelReduction() in reduction.cu
-        runParallelReduction(100000, repeats);
+        runParallelReduction(1000000, repeats);
         return 0;
     }
 
