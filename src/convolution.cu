@@ -222,6 +222,7 @@ void computeConvolutionSharedMemCuda(float *imgOut, const float *imgIn, const fl
 
     // fill-in constant memory
     cudaMemcpyToSymbol(constKernel, kernel, (rad2 + 1) * (rad2 + 1) * sizeof(float));
+    std::cout << "filled constant memory for kernel" << std::endl;
 
     // run cuda kernel
     computeConvolutionSharedMemKernel<<<grid,block,smBytes>>>(imgOut, imgIn, kernel, kradius, w, h, nc);

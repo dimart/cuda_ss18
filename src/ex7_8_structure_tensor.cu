@@ -67,11 +67,11 @@ int main(int argc,char **argv)
     mIn.convertTo(mIn, CV_32F);
 
     // init kernel
-    int kradius = 0;    // TODO (7.1) calculate kernel radius using sigma
+    int kradius = ceil(3 * sigma);
     std::cout << "kradius: " << kradius << std::endl;
-    int k_diameter = 0;     // TODO (7.1) calculate kernel diameter from radius
+    int k_diameter = 2 * kradius + 1;
     int kn = k_diameter*k_diameter;
-    float *kernel = NULL;    // TODO (7.1) allocate array
+    float *kernel = new float[kn];
     createConvolutionKernel(kernel, kradius, sigma);
 
     // get image dimensions
@@ -87,46 +87,80 @@ int main(int argc,char **argv)
     //cv::Mat mOut(h,w,mIn.type());  // grayscale or color depending on input image, nc layers
     cv::Mat mOut(h,w,CV_32FC3);    // color, 3 layers
     cv::Mat mM11(h,w,CV_32FC1);    // grayscale, 1 layer
-    cv::Mat mM21(h,w,CV_32FC1);    // grayscale, 1 layer
+    cv::Mat mM12(h,w,CV_32FC1);    // grayscale, 1 layer
     cv::Mat mM22(h,w,CV_32FC1);    // grayscale, 1 layer
 
     // ### Allocate arrays
+
     // allocate raw input image array
-    float *imgIn = NULL;    // TODO allocate array
+    float *imgIn = new float[h * w * nc];
+
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOut = NULL;    // TODO allocate array
-    float *t11 = NULL;    // TODO allocate array
-    float *t22 = NULL;    // TODO allocate array
-    float *t12 = NULL;    // TODO allocate array
+    float *imgOut = new float[h * w * nc];
+    float *t11 = new float[h * w];
+    float *t12 = new float[h * w];
+    float *t22 = new float[h * w];
+
+    // allocate kernels
+    int kernel_radius = 1;
+    size_t nbytes_kernel = (size_t)(9)*sizeof(float);
+    float kernelDx[9] = { -3.0/32.0,  0,  3.0/32.0,
+                         -10.0/32.0,  0, 10.0/32.0,
+                          -3.0/32.0,  0,  3.0/32.0};
+
+    float kernelDy[9] = { -3.0/32.0, -10.0/32.0,  -3.0/32.0,
+                                  0,          0,          0,
+                           3.0/32.0,  10.0/32.0,   3.0/32.0};
+
 
     // allocate arrays on GPU
+    size_t nbytes_fullCh = (size_t)(h * w * nc)*sizeof(float);
+    size_t nbytes_oneCh = (size_t)(h * w )*sizeof(float);
+    size_t nbytes_gauss_kernel = (size_t)(kn)*sizeof(float);
+
     // kernel
     float *d_kernelGauss = NULL;
-    // TODO alloc cuda memory for device arrays
-    float kernelDx[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};    // TODO (7.2) fill
-    float kernelDy[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};    // TODO (7.2) fill
     float *d_kernelDx = NULL;
     float *d_kernelDy = NULL;
-    // TODO alloc cuda memory for device arrays
+    cudaMalloc(&d_kernelGauss, nbytes_gauss_kernel);
+    cudaMalloc(&d_kernelDx, nbytes_kernel);
+    cudaMalloc(&d_kernelDy, nbytes_kernel);
+
     // input
     float *d_imgIn = NULL;
-    // TODO alloc cuda memory for device arrays
+    cudaMalloc(&d_imgIn, nbytes_fullCh);
+
     // output
     float *d_imgOut = NULL;
-    // TODO alloc cuda memory for device arrays
+    cudaMalloc(&d_imgOut, nbytes_fullCh);
+
     // temp
     float *d_inSmooth = NULL;
+    cudaMalloc(&d_inSmooth, nbytes_fullCh);
+
     float *d_dx = NULL;
     float *d_dy = NULL;
+    cudaMalloc(&d_dx, nbytes_fullCh);
+    cudaMalloc(&d_dy, nbytes_fullCh);
+
     float *d_tensor11Nonsmooth = NULL;
     float *d_tensor12Nonsmooth = NULL;
     float *d_tensor22Nonsmooth = NULL;
+    cudaMalloc(&d_tensor11Nonsmooth, nbytes_oneCh);
+    cudaMalloc(&d_tensor12Nonsmooth, nbytes_oneCh);
+    cudaMalloc(&d_tensor22Nonsmooth, nbytes_oneCh);
+
     float *d_tensor11 = NULL;
     float *d_tensor12 = NULL;
     float *d_tensor22 = NULL;
+    cudaMalloc(&d_tensor11, nbytes_oneCh);
+    cudaMalloc(&d_tensor12, nbytes_oneCh);
+    cudaMalloc(&d_tensor22, nbytes_oneCh);
+
     float *d_lmb1 = NULL;
     float *d_lmb2 = NULL;
-    // TODO alloc cuda memory for device arrays
+    cudaMalloc(&d_lmb1, nbytes_oneCh);
+    cudaMalloc(&d_lmb2, nbytes_oneCh);
 
     do
     {
@@ -136,32 +170,42 @@ int main(int argc,char **argv)
         // init raw input image array (and convert to layered)
         convertMatToLayered (imgIn, mIn);
 
-        // TODO (7.1) upload kernel to device
-        // TODO (7.2) upload kernelDx and kernelDy to device
-        // TODO upload input to device
+        // CPU => GPU
+        cudaMemcpy(d_imgIn, imgIn, nbytes_fullCh, cudaMemcpyHostToDevice); CUDA_CHECK;
+        cudaMemcpy(d_kernelGauss, kernel, nbytes_gauss_kernel, cudaMemcpyHostToDevice); CUDA_CHECK;
+        cudaMemcpy(d_kernelDx, kernelDx, nbytes_kernel, cudaMemcpyHostToDevice); CUDA_CHECK;
+        cudaMemcpy(d_kernelDy, kernelDy, nbytes_kernel, cudaMemcpyHostToDevice); CUDA_CHECK;
 
         Timer timer;
         timer.start();
 
-        // TODO (7.1) smooth imgIn using computeConvolutionGlobalMemCuda()
+        // S = G_sigma * u
+        computeConvolutionSharedMemCuda(d_inSmooth, d_imgIn, d_kernelGauss, kradius, w, h, nc);
+        cudaThreadSynchronize();
 
-        // TODO (7.2) compute derivatives d_dx and d_dy using computeConvolutionGlobalMemCuda()
+        // v1 = dxS, v2 = dyS
+        computeConvolutionSharedMemCuda(d_dx, d_inSmooth, d_kernelDx, kernel_radius, w, h, nc);
+        cudaThreadSynchronize();
+        computeConvolutionSharedMemCuda(d_dy, d_inSmooth, d_kernelDy, kernel_radius, w, h, nc);
+        cudaThreadSynchronize();
 
-        // compute tensor
-        // TODO (7.3) implement computeStructureTensorCuda() in structure_tensor.cu
+        // compute tensor M = {{dxS*dxS, dxS*dyS}, {dyS*dxS, dyS}}, a.k.a. m11, m12, m22
         computeStructureTensorCuda(d_tensor11Nonsmooth, d_tensor12Nonsmooth, d_tensor22Nonsmooth, d_dx, d_dy, w, h, nc);  CUDA_CHECK;
         cudaThreadSynchronize();
 
-        // blur tensor
-        // TODO (7.4) blur non-smooth tensor images using computeConvolutionGlobalMemCuda()
+        // blur tensor, T = G_sigma * M
+        computeConvolutionSharedMemCuda(d_tensor11, d_tensor11Nonsmooth, d_kernelGauss, kradius, w, h, 1);
+        cudaThreadSynchronize();
+        computeConvolutionSharedMemCuda(d_tensor12, d_tensor12Nonsmooth, d_kernelGauss, kradius, w, h, 1);
+        cudaThreadSynchronize();
+        computeConvolutionSharedMemCuda(d_tensor22, d_tensor22Nonsmooth, d_kernelGauss, kradius, w, h, 1);
+        cudaThreadSynchronize();
 
         // compute detector
-        // TODO (8.2) implement computeDetectorCuda() in structure_tensor.cu
         computeDetectorCuda(d_lmb1, d_lmb2, d_tensor11, d_tensor12, d_tensor22, w, h);
         cudaThreadSynchronize();
 
         // set output image
-        // TODO (8.3) implement computeTensorOutputCuda() in structure_tensor.cu
         computeTensorOutputCuda(d_imgOut, d_lmb1, d_lmb2, d_imgIn, w, h, nc, alpha, beta);
         cudaThreadSynchronize();
 
@@ -169,16 +213,30 @@ int main(int argc,char **argv)
         float t = timer.get();
         std::cout << "time: " << t*1000 << " ms" << std::endl;
 
-        // TODO copy all necessary arrays from device to host
+        // GPU => CPU
+        cudaMemcpy(imgOut, d_imgOut, nbytes_fullCh, cudaMemcpyDeviceToHost); CUDA_CHECK;
+        cudaMemcpy(t11, d_tensor11Nonsmooth, nbytes_oneCh, cudaMemcpyDeviceToHost); CUDA_CHECK;
+        cudaMemcpy(t12, d_tensor12Nonsmooth, nbytes_oneCh, cudaMemcpyDeviceToHost); CUDA_CHECK;
+        cudaMemcpy(t22, d_tensor22Nonsmooth, nbytes_oneCh, cudaMemcpyDeviceToHost); CUDA_CHECK;
 
         // show input image
         showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
 
         // show output image: first convert to interleaved opencv format from the layered raw array
         convertLayeredToMat(mOut, imgOut);
-        showImage("Output", mOut, 100+w+40, 100);
+        showImage("Output", mOut, 100, 100);
 
-        // TODO (7.5) visualize tensor images t11, t12, t22 (incl. scaling)
+        // visualize tensor images t11, t12, t22 (incl. scaling)
+        convertLayeredToMat(mM11, t11);
+        convertLayeredToMat(mM12, t12);
+        convertLayeredToMat(mM22, t22);
+        float f = 10*255.f;
+        mM11 *= f;
+        mM12 *= f;
+        mM22 *= f;
+        showImage("M11", mM11, 100+w+40, 100);
+        showImage("M12", mM12, 100, 100+w+40);
+        showImage("M22", mM22, 100+w+40, 100+w+40);
 
         if (useCam)
         {
@@ -206,13 +264,17 @@ int main(int argc,char **argv)
         //cv::imwrite("image_input.png",mIn*255.f);  // "imwrite" assumes channel range [0,255]
         cv::imwrite("image_result.png", mOut*255.f);
         cv::imwrite("image_m11.png", mM11*10*255.f);
-        cv::imwrite("image_m21.png", mM21*10*255.f);
+        cv::imwrite("image_m12.png", mM12*10*255.f);
         cv::imwrite("image_m22.png", mM22*10*255.f);
     }
 
-    // ### Free allocated arrays
-    // TODO free cuda memory of all device arrays
-    // TODO free memory of all host arrays
+    // ### TODO: Free allocated arrays
+    delete[] imgIn;
+    delete[] imgOut;
+    delete[] kernel;
+    cudaFree(d_imgIn); CUDA_CHECK;
+    cudaFree(d_imgOut); CUDA_CHECK;
+    cudaFree(d_kernelGauss); CUDA_CHECK;
 
     // close all opencv windows
     cv::destroyAllWindows();

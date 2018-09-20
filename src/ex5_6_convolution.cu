@@ -146,10 +146,6 @@ int main(int argc,char **argv)
             cudaMemcpy(d_imgIn, imgIn, nbytes, cudaMemcpyHostToDevice); CUDA_CHECK;
             cudaMemcpy(d_kernel, kernel, kn * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
 
-            // if using constant memory
-            // TODO (6.3) copy kernel from host to constant memory
-            //std::cout << "using constant memory for kernel" << std::endl;
-
             Timer timer;
             timer.start();
 
