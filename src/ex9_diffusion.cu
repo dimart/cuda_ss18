@@ -23,6 +23,7 @@ int main(int argc,char **argv)
         "{n|iter|100|iterations}"
         "{e|epsilon|0.01|epsilon}"
         "{d|dt|0.001|dt}"
+        "{g|0|diffusivity: 0=constant, 1=max, 2=exp}"
     };
     cv::CommandLineParser cmd(argc, argv, params);
 
@@ -34,9 +35,17 @@ int main(int argc,char **argv)
     std::cout << "iterations: " << iter << std::endl;
     float epsilon = cmd.get<float>("epsilon");
     std::cout << "epsilon: " << epsilon << std::endl;
+    size_t diffusivity_mode = (size_t)cmd.get<int>("g");
+    if (diffusivity_mode == 1)
+        std::cout << "diffusivity: max" << std::endl;
+    else if (diffusivity_mode == 2)
+        std::cout << "diffusivity: exponential" << std::endl;
+    else
+        std::cout << "diffusivity: constant" << std::endl;
+
     float dt = cmd.get<float>("dt");
     if (dt == 0.0f)
-        dt = 0.225f/funcDiffusivity(0, epsilon, 1);
+        dt = 0.225f/funcDiffusivity(0, epsilon, diffusivity_mode);
     std::cout << "dt: " << dt << std::endl;
 
     // init camera
@@ -83,16 +92,22 @@ int main(int argc,char **argv)
 
     // ### Allocate arrays
     // allocate raw input image array
-    float *imgIn = NULL;    // TODO allocate array
+    float *imgIn = new float[w * h * nc];
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOut = NULL;    // TODO allocate array
+    float *imgOut = new float[w * h * nc];
 
     // allocate arrays on GPU
+    size_t nbytes_fullCh = (size_t)(h * w * nc)*sizeof(float);
+    size_t nbytes_oneCh = (size_t)(h * w)*sizeof(float);
+
     float *d_imgIn = NULL;
     float *d_v1 = NULL;
     float *d_v2 = NULL;
     float *d_div = NULL;
-    // TODO alloc cuda memory for device arrays
+    cudaMalloc(&d_imgIn, nbytes_fullCh);
+    cudaMalloc(&d_v1, nbytes_fullCh);
+    cudaMalloc(&d_v2, nbytes_fullCh);
+    cudaMalloc(&d_div, nbytes_oneCh);
 
     do
     {
@@ -101,22 +116,24 @@ int main(int argc,char **argv)
 
         // init raw input image array (and convert to layered)
         convertMatToLayered (imgIn, mIn);
-        // upload to GPU
-        // TODO copy from imgIn to d_imgIn
+        // CPU => GPU
+        cudaMemcpy(d_imgIn, imgIn, nbytes_fullCh, cudaMemcpyHostToDevice); CUDA_CHECK;
 
         Timer timer;
         timer.start();
         for(size_t i = 0; i < iter; ++i)
         {
-            // TODO (9.1) compute gradient of d_imgIn using computeGradientCuda() in gradient.cu
+            // compute gradient of d_imgIn
+            computeGradientCuda(d_v1, d_v2, d_imgIn, w, h, nc);
 
-            // TODO (9.3) implement multDiffusivityCuda() in diffusion.cu
-            multDiffusivityCuda(d_v1, d_v2, w, h, nc, epsilon);
+            // compute diffusivity and store it back into d_v
+            multDiffusivityCuda(d_v1, d_v2, w, h, nc, epsilon, diffusivity_mode);
             cudaDeviceSynchronize();
 
-            // TODO (9.4) compute divergence of d_v1, d_v2 using computeDivergenceCuda() in divergence.cu
+            // compute divergence of d_v1, d_v2
+            computeDivergenceCuda(d_div, d_v1, d_v2, w, h, nc);
 
-            // TODO (9.5) implement updateDiffusivityCuda() in diffusion.cu
+            // perform the update
             updateDiffusivityCuda(d_imgIn, d_div, w, h, nc, dt);
             cudaDeviceSynchronize();
         }
@@ -124,8 +141,8 @@ int main(int argc,char **argv)
         float t = timer.get();
         std::cout << "time: " << t*1000 << " ms" << std::endl;
 
-        // download from GPU
-        // TODO download from device arrays to host arrays
+        // GPU => CPU
+        cudaMemcpy(imgOut, d_imgIn, nbytes_fullCh, cudaMemcpyDeviceToHost); CUDA_CHECK;
 
         // show input image
         showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
@@ -162,8 +179,12 @@ int main(int argc,char **argv)
     }
 
     // ### Free allocated arrays
-    // TODO free cuda memory of all device arrays
-    // TODO free memory of all host arrays
+    delete[] imgIn;
+    delete[] imgOut;
+    cudaFree(d_imgIn); CUDA_CHECK;
+    cudaFree(d_v1); CUDA_CHECK;
+    cudaFree(d_v2); CUDA_CHECK;
+    cudaFree(d_div); CUDA_CHECK;
 
     // close all opencv windows
     cv::destroyAllWindows();

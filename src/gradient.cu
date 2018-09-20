@@ -30,7 +30,7 @@ void computeGradientKernel(float *u, float *v, const float *imgIn, int w, int h,
 void computeGradientCuda(float *u, float *v, const float *imgIn, int w, int h, int nc)
 {
     // calculate block and grid size
-    dim3 block(32, 10, 3);     // TODO (4.1) specify suitable block size
+    dim3 block(32, 10, 3);
     dim3 grid = computeGrid2D(block, w, h);
 
     // run cuda kernel
