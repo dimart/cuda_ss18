@@ -98,6 +98,7 @@ CUDA_ADD_EXECUTABLE(ex9_diffusion
         src/gradient.cuh src/gradient.cu
         src/divergence.cuh src/divergence.cu
         src/diffusion.cuh src/diffusion.cu
+        src/convolution.cuh src/convolution.cu
         src/ex9_diffusion.cu
 )
 TARGET_LINK_LIBRARIES(ex9_diffusion ${OpenCV_LIBS})

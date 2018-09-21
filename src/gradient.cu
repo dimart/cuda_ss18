@@ -19,11 +19,12 @@ void computeGradientKernel(float *u, float *v, const float *imgIn, int w, int h,
     int i = x + y * w + w * h * z;
     int dx = (x + 1) + y * w + w * h * z;
     int dy = x + (y + 1) * w + w * h * z;
-    if (x < w && y < h && z < nc)
-        if (x + 1 < w)
-            u[i] = imgIn[dx] - imgIn[i];
-        if (y + 1 < h)
-            v[i] = imgIn[dy] - imgIn[i];
+    if (x >= w && y >= h && z >= nc) return;
+
+    if (x + 1 < w)
+        u[i] = imgIn[dx] - imgIn[i];
+    if (y + 1 < h)
+        v[i] = imgIn[dy] - imgIn[i];
 }
 
 

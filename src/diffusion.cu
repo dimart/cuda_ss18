@@ -30,10 +30,19 @@ void multDiffusivityKernel(float *v1, float *v2, int w, int h, int nc, float eps
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     if (x >= w || y >= h) return;
 
+    // compute the gradient norm
+    float norm = 0.0f;
     for (int ch = 0; ch < nc; ch++) {
         int pos = x + y * w + w * h * ch;
-        float norm = sqrtf(v1[pos] * v1[pos] + v2[pos] * v2[pos]);
-        float g = funcDiffusivity(norm, epsilon, diffusivity_mode);
+        norm += sqrtf(v1[pos] * v1[pos] + v2[pos] * v2[pos]);
+    }
+
+    // compute diffusivity using the norm
+    float g = funcDiffusivity(norm, epsilon, diffusivity_mode);
+
+    // multiply it and store the result back at v1, v2
+    for (int ch = 0; ch < nc; ch++) {
+        int pos = x + y * w + w * h * ch;
         v1[pos] *= g;
         v2[pos] *= g;
     }

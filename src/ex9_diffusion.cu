@@ -12,6 +12,7 @@
 #include "gradient.cuh"
 #include "divergence.cuh"
 #include "diffusion.cuh"
+#include "convolution.cuh"
 
 
 int main(int argc,char **argv)
@@ -24,6 +25,7 @@ int main(int argc,char **argv)
         "{e|epsilon|0.01|epsilon}"
         "{d|dt|0.001|dt}"
         "{g|0|diffusivity: 0=constant, 1=max, 2=exp}"
+        "{c|cmp|false|compare with Gaussian}"
     };
     cv::CommandLineParser cmd(argc, argv, params);
 
@@ -42,6 +44,8 @@ int main(int argc,char **argv)
         std::cout << "diffusivity: exponential" << std::endl;
     else
         std::cout << "diffusivity: constant" << std::endl;
+
+    bool cmp_with_gauss = cmd.get<bool>("cmp");
 
     float dt = cmd.get<float>("dt");
     if (dt == 0.0f)
@@ -107,7 +111,36 @@ int main(int argc,char **argv)
     cudaMalloc(&d_imgIn, nbytes_fullCh);
     cudaMalloc(&d_v1, nbytes_fullCh);
     cudaMalloc(&d_v2, nbytes_fullCh);
-    cudaMalloc(&d_div, nbytes_oneCh);
+    cudaMalloc(&d_div, nbytes_fullCh);
+
+    // setup Gaussian kernel for comparision
+    float *gauss_img = new float[w * h * nc];
+    float *d_gauss_img = NULL;
+    float *d_gauss_kernel = NULL;
+    cv::Mat mGaussImg(h,w,mIn.type());
+
+    if (cmp_with_gauss) {
+        float sigma = sqrt(2 * dt * iter);
+        int kradius = ceil(3 * sigma);
+        std::cout << "Gaussian kernel radius = " << kradius << std::endl;
+        std::cout << "Gaussian kernel sigma = " << sigma << std::endl;
+        int k_diameter = 2 * kradius + 1;
+        int kn = k_diameter * k_diameter;
+        float *gauss_kernel = new float[kn];
+        createConvolutionKernel(gauss_kernel, kradius, sigma);
+
+        // allocate memory for the result
+        cudaMalloc(&d_gauss_img, nbytes_fullCh);
+        cudaMalloc(&d_gauss_kernel, kn * sizeof(float));
+
+        // copy gaussian kernel
+        convertMatToLayered (imgIn, mIn / 255.0f);
+        cudaMemcpy(d_imgIn, imgIn, nbytes_fullCh, cudaMemcpyHostToDevice); CUDA_CHECK;
+        cudaMemcpy(d_gauss_kernel, gauss_kernel, kn * sizeof(float), cudaMemcpyHostToDevice); CUDA_CHECK;
+
+        // apply gaussian to the input image
+        computeConvolutionSharedMemCuda(d_gauss_img, d_imgIn, d_gauss_kernel, kradius, w, h, nc);
+    }
 
     do
     {
@@ -151,6 +184,12 @@ int main(int argc,char **argv)
         convertLayeredToMat(mOut, imgOut);
         showImage("Output", mOut, 100+w+40, 100);
 
+        if (cmp_with_gauss) {
+            // show the input image blurred with gaussian
+            cudaMemcpy(gauss_img, d_gauss_img, nbytes_fullCh, cudaMemcpyDeviceToHost); CUDA_CHECK;
+            convertLayeredToMat(mGaussImg, gauss_img);
+            showImage("Blurred with Gaussian", mGaussImg, 100+w+40, 100+h+40);
+        }
         if (useCam)
         {
             // wait 30ms for key input

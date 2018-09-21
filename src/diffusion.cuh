@@ -14,7 +14,7 @@ inline float funcDiffusivity(float x, float eps, int mode)
     if (mode == 1)
     {
         // Huber diffusion (non-linear isotropic)
-        return 1.0 / max(eps, x);
+        return 1.0f / max(eps, x);
     }
     else if (mode == 2)
     {
@@ -24,7 +24,7 @@ inline float funcDiffusivity(float x, float eps, int mode)
     else
     {
         // Laplace diffusion (linear isotropic)
-        return 1.f;
+        return 1.0f;
     }
 }
 
