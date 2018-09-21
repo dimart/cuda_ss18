@@ -184,26 +184,21 @@ int main(int argc,char **argv)
 
         // S = G_sigma * u
         computeConvolutionGlobalMemCuda(d_inSmooth, d_imgIn, d_kernelGauss, kradius, w, h, nc);
-        cudaThreadSynchronize();
 
         // v1 = dxS, v2 = dyS
         computeConvolutionGlobalMemCuda(d_dx, d_inSmooth, d_kernelDx, kernelDxDy_radius, w, h, nc);
         computeConvolutionGlobalMemCuda(d_dy, d_inSmooth, d_kernelDy, kernelDxDy_radius, w, h, nc);
-        cudaThreadSynchronize();
 
         // compute tensor M = {{dxS*dxS, dxS*dyS}, {dyS*dxS, dyS}}, a.k.a. m11, m12, m22
         computeStructureTensorCuda(d_tensor11Nonsmooth, d_tensor12Nonsmooth, d_tensor22Nonsmooth, d_dx, d_dy, w, h, nc);  CUDA_CHECK;
-        cudaThreadSynchronize();
 
         // blur tensor, T = G_sigma * M
         computeConvolutionGlobalMemCuda(d_tensor11, d_tensor11Nonsmooth, d_kernelGauss, kradius, w, h, 1);
         computeConvolutionGlobalMemCuda(d_tensor12, d_tensor12Nonsmooth, d_kernelGauss, kradius, w, h, 1);
         computeConvolutionGlobalMemCuda(d_tensor22, d_tensor22Nonsmooth, d_kernelGauss, kradius, w, h, 1);
-        cudaThreadSynchronize();
 
         // compute detector
         computeDetectorCuda(d_lmb1, d_lmb2, d_tensor11, d_tensor12, d_tensor22, w, h);
-        cudaThreadSynchronize();
 
         // set output image
         computeTensorOutputCuda(d_imgOut, d_lmb1, d_lmb2, d_imgIn, w, h, nc, alpha, beta);
