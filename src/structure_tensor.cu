@@ -38,11 +38,12 @@ void computeTensorOutputKernel(float *imgOut, const float *lmb1, const float *lm
 __device__
 void computeEigenValues(float *lmb1, float *lmb2, const float m11, const float m12, const float m22, const int pos) {
     float trace = m11 + m22;
-    float det = m11 * m22 - m12 * 2;
-    float a = trace / 2;
-    float b = powf((trace * trace) / 4 - det, 0.5);
+    float det = m11 * m22 - m12 * m12;
+    float a = trace / 2.0;
+    float b = sqrtf((trace * trace) / 4.0 - det);
     float lambda1 = a + b;
     float lambda2 = a - b;
+    // follow convention that l1 <= l2
     if (lambda1 < lambda2) {
         lmb1[pos] = lambda1;
         lmb2[pos] = lambda2;
@@ -102,7 +103,7 @@ void computeTensorOutputCuda(float *imgOut, const float *lmb1, const float *lmb2
 void computeDetectorCuda(float *lmb1, float *lmb2, const float *tensor11, const float *tensor12, const float *tensor22, int w, int h)
 {
     // calculate block and grid size
-    dim3 block(32, 32, 1);     // TODO (8.2) specify suitable block size
+    dim3 block(32, 32, 1);
     dim3 grid = computeGrid2D(block, w, h);
 
     // run cuda kernel
