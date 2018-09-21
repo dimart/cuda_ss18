@@ -34,8 +34,10 @@ void multDiffusivityKernel(float *v1, float *v2, int w, int h, int nc, float eps
     float norm = 0.0f;
     for (int ch = 0; ch < nc; ch++) {
         int pos = x + y * w + w * h * ch;
-        norm += sqrtf(v1[pos] * v1[pos] + v2[pos] * v2[pos]);
+        norm += v1[pos] * v1[pos] + v2[pos] * v2[pos];
+//        norm += sqrtf(v1[pos] * v1[pos] + v2[pos] * v2[pos]);
     }
+    norm = sqrtf(norm);
 
     // compute diffusivity using the norm
     float g = funcDiffusivity(norm, epsilon, diffusivity_mode);
@@ -58,7 +60,33 @@ void multDiffusivityAnisotropicKernel(float *v1, float *v2, float *g11, float *g
 __global__
 void computeDiffusivityKernel(float *diffusivity, const float *u, int w, int h, int nc, float epsilon)
 {
-    // TODO (11.2) compute diffusivity
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    if (x >= w || y >= h) return;
+
+    // compute the gradient norm
+    float norm = 0.0f;
+    for (int ch = 0; ch < nc; ch++) {
+        int ch_skip = w * h * ch;
+        int pos = x + y * w + ch_skip;
+        int dx = (x + 1) + y * w + ch_skip;
+        int dy = x + (y + 1) * w + ch_skip;
+
+        // compute gradient at the point
+        float v1 = 0.0f;
+        float v2 = 0.0f;
+        if (x + 1 < w)
+            v1 = u[dx] - u[pos];
+        if (y + 1 < h)
+            v2 = u[dy] - u[pos];
+
+        // add it up for the norm
+        norm += v1 * v1 + v2 * v2;
+    }
+    norm = sqrtf(norm);
+
+    // compute Huber diffusivity (mode = 1) using the norm
+    diffusivity[x + y * w] = funcDiffusivity(norm, epsilon, 1);
 }
 
 
@@ -122,14 +150,14 @@ void multDiffusivityAnisotropicCuda(float *v1, float *v2, float *g11, float *g12
 void computeDiffusivityCuda(float *diffusivity, const float *u, int w, int h, int nc, float epsilon)
 {
     // calculate block and grid size
-    dim3 block(0, 0, 0);     // TODO (11.2) specify suitable block size
+    dim3 block(32, 32, 1);
     dim3 grid = computeGrid2D(block, w, h);
 
     // run cuda kernel
-    // TODO (11.2) execute kernel for computing diffusivity
+    computeDiffusivityKernel<<<grid, block>>>(diffusivity, u, w, h, nc, epsilon);
 
     // check for errors
-    // TODO (11.2)
+    CUDA_CHECK;
 }
 
 

@@ -8,11 +8,15 @@
 #include <iostream>
 
 
+// Huber regularization
 __device__
 inline float huber(float x, float eps)
 {
-    // TODO implement Huber regularization
-    return 0.0f;
+    if (x < eps) {
+        return pow(x, 2) / (2 * eps);
+    } else {
+        return x - eps / 2;
+    }
 }
 
 void minimizeEnergySorStepCuda(float *uOut, const float *uIn, const float *diffusivity, const float *imgData, int w, int h, int nc, float lambda, float sor_theta, int redOrBlack);

@@ -105,22 +105,33 @@ int main(int argc,char **argv)
 
     // ### Allocate arrays
     // allocate raw input image array
-    float *imgIn = NULL;    // TODO allocate array
+    float *imgIn = new float[h * w * nc];
     // allocate raw output array (the computation result will be stored in this array, then later converted to mOut for displaying)
-    float *imgOut = NULL;    // TODO allocate array
+    float *imgOut = new float[h * w * nc];
 
     // allocate arrays on GPU
+    size_t nbytes_fullCh = (size_t)(h * w * nc)*sizeof(float);
+    size_t nbytes_oneCh = (size_t)(h * w)*sizeof(float);
     // input
     float *d_imgData = NULL;
+    cudaMalloc(&d_imgData, nbytes_fullCh);
     // temp
     float *d_imgIn = NULL;
     float *d_imgOut = NULL;
-    float *d_diffusivity = NULL;    // TODO allocate array
-    float *d_energy = NULL;    // TODO allocate array
+    float *d_diffusivity = NULL;
+    float *d_energy = NULL;
+    cudaMalloc(&d_imgIn, nbytes_fullCh);
+    cudaMalloc(&d_imgOut, nbytes_fullCh);
+    cudaMalloc(&d_diffusivity, nbytes_oneCh);
+    cudaMalloc(&d_energy, nbytes_fullCh);
 
     // create cublas handle
     cublasHandle_t handle;
-    // TODO create handle using cublasCreate()
+    cublasStatus_t stat = cublasCreate(&handle);
+    if (stat != CUBLAS_STATUS_SUCCESS) {
+        std::cout << "CUBLAS initialization failed\n";
+        return;
+    }
 
     do
     {
@@ -128,13 +139,15 @@ int main(int argc,char **argv)
         mIn /= 255.0f;
 
         // add noise to input image
-        // TODO (11.1)
+        addNoise(mIn, noise);
 
         // init raw input image array (and convert to layered)
         convertMatToLayered (imgIn, mIn);
 
         // fixed input image
-        // TODO upload input to device and copy to working image
+        // CPU => GPU
+        cudaMemcpy(d_imgIn, imgIn, nbytes_fullCh, cudaMemcpyHostToDevice); CUDA_CHECK;
+        cudaMemcpy(d_imgData, imgIn, nbytes_fullCh, cudaMemcpyHostToDevice); CUDA_CHECK;
 
         Timer timer;
         timer.start();
@@ -143,13 +156,12 @@ int main(int argc,char **argv)
         float *a_out = d_imgOut;
         for(size_t i = 0; i < iter; ++i)
         {
-            // TODO (11.2) compute diffusivity using computeDiffusivityCuda() in diffusion.cu
+            // compute diffusivity
             computeDiffusivityCuda(d_diffusivity, a_in, w, h, nc, epsilon);  CUDA_CHECK;
 
             // if jacobi
             if (jacobiStep)
             {
-                // TODO (11.2) implement minimizeEnergyJacobiStep() in energy.cu
                 minimizeEnergyJacobiStepCuda(a_out, a_in, d_diffusivity, d_imgData, w, h, nc, lambda);  CUDA_CHECK;
                 std::swap(a_in, a_out);  // the output is always in "a_in" after this
             }
@@ -162,19 +174,23 @@ int main(int argc,char **argv)
             }
 
             // calculate energy
-            // TODO (12.2) implement computeEnergyCuda() in energy.cu
             computeEnergyCuda(d_energy, a_in, d_imgData, w, h, nc, lambda, epsilon); CUDA_CHECK;
 
             float energy = 0.0f;
-            // TODO (12.2) compute energy from d_energy using cublasSasum()
+            cublasStatus_t stat = cublasSasum(handle, w * h * nc, d_energy, 1, &energy);
+            if (stat != CUBLAS_STATUS_SUCCESS) {
+                std::cout << "CUBLAS summation failed\n";
+                return;
+            }
+
             std::cout << i << "," << energy << std::endl;
         }
         timer.end();
         float t = timer.get();
         std::cout << "time: " << t*1000 << " ms" << std::endl;
 
-        // download from GPU
-        // TODO copy all necessary arrays from device to host
+        // GPU => CPU
+        cudaMemcpy(imgOut, d_imgOut, nbytes_fullCh, cudaMemcpyDeviceToHost); CUDA_CHECK;
 
         // show input image
         showImage("Input", mIn, 100, 100);  // show at position (x_from_left=100,y_from_above=100)
